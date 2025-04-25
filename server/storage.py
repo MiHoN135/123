@@ -21,6 +21,7 @@ class Storage:
     def __init__(self, db_path='./my.db'):
         self.db = sqlite3.connect(db_path)
         self.cursor = self.db.cursor()
+        self.active_sessions = []  # Список для хранения активных сессий
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS Users (
             user_id TEXT PRIMARY KEY NOT NULL,
@@ -59,6 +60,9 @@ class Storage:
         return User(_id, login, hashed_password)
 
     def start_session(self, auth_id, token, user_id):
+        session = token
+        self.active_sessions.append(session)
+        print(self.active_sessions)
         self.cursor.execute('''
         INSERT INTO Sessions (
         auth_id, token, user_id)

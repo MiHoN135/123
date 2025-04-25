@@ -28,6 +28,8 @@ class Handler(BaseHTTPRequestHandler):
             self.register_impl()
         if self.path == self.server.path.LOGIN:
             self.login_impl()
+        if self.path == self.server.path.LOGOUT:
+            self.logout_impl()
 
     def handle_404(self):
         """ Обработка несуществующих маршрутов """
@@ -85,32 +87,47 @@ class Handler(BaseHTTPRequestHandler):
         self.set_response(dumps({'message': "authorized", "token": encoded_jwt}))
 
     def logout_impl(self):
+        """Реализация выхода пользователя из системы"""
         try:
-            # 1. Получаем токен из заголовка Authorization
+            # 1. Проверяем наличие и формат заголовка Authorization
             auth_header = self.headers.get('Authorization')
-            if not auth_header or not auth_header.startswith('Bearer '):
-                self.set_response(dumps({'error': 'Authorization header missing or invalid'}), 401)
+            if not auth_header:
+                self.set_response(dumps({'error': 'Authorization header is missing'}), 401)
                 return
 
-            token = auth_header.split(' ')[1]  # Извлекаем токен после 'Bearer '
+            # 2. Извлекаем токен из заголовка
+            parts = auth_header.split()
+            if len(parts) != 2 or parts[0].lower() != 'bearer':
+                self.set_response(dumps({'error': 'Invalid Authorization header format'}), 401)
+                return
 
-            # 2. Декодируем токен для получения auth_id
+            token = self.server.db.active_sessions[-1]
+
+            # 3. Валидация и декодирование токена
             try:
                 payload = jwt.decode(token, '123', algorithms=['HS256'])
-                auth_id = payload['auth_id']
-                user_id = payload['user_id']
+                auth_id = payload.get('auth_id')
+                user_id = payload.get('user_id')
+
+                if not auth_id or not user_id:
+                    raise jwt.InvalidTokenError('Missing required token fields')
             except jwt.ExpiredSignatureError:
-                self.set_response(dumps({'error': 'Token expired'}), 401)
+                self.set_response(dumps({'error': 'Token has expired'}), 401)
                 return
-            except jwt.InvalidTokenError:
-                self.set_response(dumps({'error': 'Invalid token'}), 401)
+            except jwt.InvalidTokenError as e:
+                self.set_response(dumps({'error': f'Invalid token: {str(e)}'}), 401)
                 return
 
-            # 3. Обновляем запись сессии в базе данных
-            self.server.db.end_session(auth_id)
+            # 4. Завершаем сессию в базе данных
+            if not self.server.db.end_session(auth_id):
+                self.set_response(dumps({'error': 'Session not found or already ended'}), 404)
+                return
 
-            # 4. Возвращаем успешный ответ
-            self.set_response(dumps({'message': 'Successfully logged out'}))
+            # 5. Успешный ответ
+            self.set_response(dumps({
+                'message': 'Successfully logged out',
+                'user_id': user_id
+            }))
 
         except Exception as e:
-            self.set_response(dumps({'error': f'Server error: {str(e)}'}), 500)
+            self.set_response(dumps({'error': 'Internal server error'}), 500)
