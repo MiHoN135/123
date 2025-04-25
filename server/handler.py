@@ -1,4 +1,9 @@
+import hashlib
 from http.server import BaseHTTPRequestHandler
+from random import randint
+
+import jwt
+
 from server import Server, Path
 from json import dumps, loads
 
@@ -19,13 +24,10 @@ class Handler(BaseHTTPRequestHandler):
             return
 
     def do_POST(self):
-        """ Маршрутизатор POST запросов """
-        if self.path not in Path.get_paths():
-            self.handle_404()
-            return
-        print("POST handler")
         if self.path == self.server.path.REGISTER:
             self.register_impl()
+        if self.path == self.server.path.LOGIN:
+            self.login_impl()
 
     def handle_404(self):
         """ Обработка несуществующих маршрутов """
@@ -66,3 +68,18 @@ class Handler(BaseHTTPRequestHandler):
         content_len = int(self.headers.get('Content-Length'))
         post_body = self.rfile.read(content_len)
         return loads(post_body)
+
+    def login_impl(self):
+        data = self.get_post_body()
+        user = self.server.db.get_user_by_login(data.get("login"))
+        hashed_password = hashlib.sha256(data.get("password").encode()).hexdigest()
+        if user.password != hashed_password:
+            self.set_response(dumps({'error': "invalid password"}), 401)
+        auth_id = randint(0, 99999)
+        encoded_jwt = jwt.encode(
+            {'auth_id': auth_id, "user_id": user.user_id},
+            '123',
+            algorithm="HS256"
+        )
+        self.server.db.start_session(auth_id, encoded_jwt, user.user_id)
+        self.set_response(dumps({'message': "authorized", "token": encoded_jwt}))
