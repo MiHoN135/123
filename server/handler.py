@@ -83,3 +83,34 @@ class Handler(BaseHTTPRequestHandler):
         )
         self.server.db.start_session(auth_id, encoded_jwt, user.user_id)
         self.set_response(dumps({'message': "authorized", "token": encoded_jwt}))
+
+    def logout_impl(self):
+        try:
+            # 1. Получаем токен из заголовка Authorization
+            auth_header = self.headers.get('Authorization')
+            if not auth_header or not auth_header.startswith('Bearer '):
+                self.set_response(dumps({'error': 'Authorization header missing or invalid'}), 401)
+                return
+
+            token = auth_header.split(' ')[1]  # Извлекаем токен после 'Bearer '
+
+            # 2. Декодируем токен для получения auth_id
+            try:
+                payload = jwt.decode(token, '123', algorithms=['HS256'])
+                auth_id = payload['auth_id']
+                user_id = payload['user_id']
+            except jwt.ExpiredSignatureError:
+                self.set_response(dumps({'error': 'Token expired'}), 401)
+                return
+            except jwt.InvalidTokenError:
+                self.set_response(dumps({'error': 'Invalid token'}), 401)
+                return
+
+            # 3. Обновляем запись сессии в базе данных
+            self.server.db.end_session(auth_id)
+
+            # 4. Возвращаем успешный ответ
+            self.set_response(dumps({'message': 'Successfully logged out'}))
+
+        except Exception as e:
+            self.set_response(dumps({'error': f'Server error: {str(e)}'}), 500)

@@ -73,3 +73,13 @@ class Storage:
         WHERE login = ?''', (login,))
         row = self.cursor.fetchone()
         return User(*row)
+
+    def end_session(self, auth_id):
+        """Помечает сессию как завершенную с текущей меткой времени"""
+        self.cursor.execute('''
+                UPDATE Sessions 
+                SET deleted_at = CURRENT_TIMESTAMP, 
+                    deleted = true
+                WHERE auth_id = ? AND deleted = false
+            ''', (auth_id,))
+        self.db.commit()
