@@ -7,6 +7,8 @@ import jwt
 from server import Server, Path
 from json import dumps, loads
 
+from storage import Storage
+
 class Handler(BaseHTTPRequestHandler):
     """
     Класс хендлера. Отвечает за маршрутизацию запросов и их реализацию.
@@ -78,32 +80,34 @@ class Handler(BaseHTTPRequestHandler):
         if user.password != hashed_password:
             self.set_response(dumps({'error': "invalid password"}), 401)
         auth_id = randint(0, 99999)
-        encoded_jwt = jwt.encode(
+        token = jwt.encode(
             {'auth_id': auth_id, "user_id": user.user_id},
             '123',
             algorithm="HS256"
         )
-        self.server.db.start_session(auth_id, encoded_jwt, user.user_id)
-        self.set_response(dumps({'message': "authorized", "token": encoded_jwt}))
+        self.server.db.start_session(auth_id, token, user.user_id)
+        self.server.db.active_sessions.append(token)
+        self.set_response(dumps({'message': "authorized",
+                                 "token": token}))
 
     def logout_impl(self):
         """Реализация выхода пользователя из системы"""
         try:
-            # 1. Проверяем наличие и формат заголовка Authorization
+            # Проверяем наличие и формат заголовка Authorization
             auth_header = self.headers.get('Authorization')
             if not auth_header:
                 self.set_response(dumps({'error': 'Authorization header is missing'}), 401)
                 return
 
-            # 2. Извлекаем токен из заголовка
+            # Извлекаем токен из заголовка
             parts = auth_header.split()
             if len(parts) != 2 or parts[0].lower() != 'bearer':
                 self.set_response(dumps({'error': 'Invalid Authorization header format'}), 401)
                 return
 
-            token = self.server.db.active_sessions[-1]
+            token = parts[1]
 
-            # 3. Валидация и декодирование токена
+            # Валидация и декодирование токена
             try:
                 payload = jwt.decode(token, '123', algorithms=['HS256'])
                 auth_id = payload.get('auth_id')
@@ -118,12 +122,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.set_response(dumps({'error': f'Invalid token: {str(e)}'}), 401)
                 return
 
-            # 4. Завершаем сессию в базе данных
+
+            # Завершаем сессию в базе данных
             if not self.server.db.end_session(auth_id):
                 self.set_response(dumps({'error': 'Session not found or already ended'}), 404)
                 return
 
-            # 5. Успешный ответ
+            # Успешный ответ
             self.set_response(dumps({
                 'message': 'Successfully logged out',
                 'user_id': user_id

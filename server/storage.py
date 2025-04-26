@@ -60,9 +60,6 @@ class Storage:
         return User(_id, login, hashed_password)
 
     def start_session(self, auth_id, token, user_id):
-        session = token
-        self.active_sessions.append(session)
-        print(self.active_sessions)
         self.cursor.execute('''
         INSERT INTO Sessions (
         auth_id, token, user_id)
@@ -87,3 +84,12 @@ class Storage:
                 WHERE auth_id = ? AND deleted = false
             ''', (auth_id,))
         self.db.commit()
+        return self.cursor.rowcount > 0
+
+    def get_active_tokens(self):
+        """Получает список всех активных токенов из таблицы Sessions"""
+        self.cursor.execute('''
+            SELECT token FROM Sessions
+            WHERE deleted = false
+        ''')
+        return [row[0] for row in self.cursor.fetchall()]
